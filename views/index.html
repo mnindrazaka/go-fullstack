@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Show students</title>
+  </head>
+  <body>
+    <a href="/create">create new student</a>
+    <br />
+    <br />
+    <table>
+      <tr>
+        <th>No</th>
+        <th>Name</th>
+        <th>Photo</th>
+      </tr>
+
+      {{ range $index, $student := .students }}
+      <tr>
+        <td>{{ plus $index 1 }}</td>
+        <td>{{ $student.Name }}</td>
+        <td>
+          <a href="/static/upload/{{ $student.Photo }}" target="_blank">
+            Show photo
+          </a>
+        </td>
+      </tr>
+      {{ end }}
+    </table>
+  </body>
+</html>
