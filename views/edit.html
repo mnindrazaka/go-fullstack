@@ -7,16 +7,20 @@
     <title>Create new student</title>
   </head>
   <body>
-    <form method="POST" action="/create" enctype="multipart/form-data">
+    <form
+      method="POST"
+      action="/edit?id={{ .Id }}"
+      enctype="multipart/form-data"
+    >
       <label>
         name
-        <input type="text" name="name" required />
+        <input type="text" name="name" value="{{ .Name }}" required />
       </label>
       <br />
       <br />
       <label>
         photo
-        <input type="file" name="photo" required />
+        <input type="file" name="photo" />
       </label>
       <br />
       <br />

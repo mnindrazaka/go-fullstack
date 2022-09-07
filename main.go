@@ -4,7 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -44,9 +47,153 @@ func main() {
 				return
 			}
 
+			name := r.FormValue("name")
+			uploadedFile, handler, err := r.FormFile("photo")
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			defer uploadedFile.Close()
+
+			dir, err := os.Getwd()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			filename := fmt.Sprintf("%s%s", name, filepath.Ext(handler.Filename))
+			fileLocation := filepath.Join(dir, "assets", "upload", filename)
+			targetFile, err := os.OpenFile(fileLocation, os.O_WRONLY|os.O_CREATE, 0666)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			defer targetFile.Close()
+
+			if _, err := io.Copy(targetFile, uploadedFile); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			_, err = db.Exec("INSERT INTO student SET name=?, photo=?", name, filename)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			http.Redirect(w, r, "/", http.StatusMovedPermanently)
 		} else {
 			http.Error(w, "", http.StatusBadRequest)
 		}
+	})
+
+	http.HandleFunc("/edit", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			id := r.URL.Query().Get("id")
+
+			student := student{}
+			if err := db.QueryRow("SELECT * FROM student WHERE id = ?", id).Scan(&student.Id, &student.Name, &student.Photo); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			tmpl, err := template.ParseFiles("views/edit.html")
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			if err := tmpl.Execute(w, student); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		} else if r.Method == "POST" {
+			if err := r.ParseMultipartForm(1024); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			id := r.URL.Query().Get("id")
+			name := r.FormValue("name")
+
+			if _, err := db.Exec("UPDATE student SET name=? WHERE id=?", name, id); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			uploadedFile, _, err := r.FormFile("photo")
+
+			switch err {
+			case nil:
+				defer uploadedFile.Close()
+				dir, err := os.Getwd()
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+
+				student := student{}
+				if err := db.QueryRow("SELECT * FROM student WHERE id = ?", id).Scan(&student.Id, &student.Name, &student.Photo); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				filename := student.Photo
+				fileLocation := filepath.Join(dir, "assets", "upload", filename)
+
+				targetFile, err := os.OpenFile(fileLocation, os.O_WRONLY|os.O_CREATE, 0666)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				defer targetFile.Close()
+
+				if _, err := io.Copy(targetFile, uploadedFile); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				http.Redirect(w, r, "/", http.StatusMovedPermanently)
+			case http.ErrMissingFile:
+				http.Redirect(w, r, "/", http.StatusMovedPermanently)
+				break
+			default:
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				break
+			}
+		} else {
+			http.Error(w, "", http.StatusBadRequest)
+		}
+	})
+
+	http.HandleFunc("/delete", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+
+		student := student{}
+
+		if err := db.QueryRow("SELECT * FROM student WHERE id=?", id).Scan(&student.Id, &student.Name, &student.Photo); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		dir, err := os.Getwd()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		filename := student.Photo
+		fileLocation := filepath.Join(dir, "assets", "upload", filename)
+		err = os.Remove(fileLocation)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if _, err := db.Exec("DELETE FROM student WHERE id=?", id); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/", http.StatusMovedPermanently)
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
